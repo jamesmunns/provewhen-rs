@@ -13,6 +13,7 @@ pub fn setup_rocket(keydb: Mvdb<KeyDB>) -> rocket::Rocket {
                 endpoints::hello,
 
                 endpoints::sign,
+                endpoints::key_time,
             ],
         )
         .manage(keydb)

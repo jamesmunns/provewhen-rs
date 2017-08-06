@@ -12,3 +12,9 @@ pub struct SignResponse {
     pub message: String,
     pub signature: String,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct KeyResponse {
+    pub public_key: String,
+    pub key_time: String,
+}

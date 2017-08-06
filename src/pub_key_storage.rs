@@ -1,5 +1,7 @@
 use errors::*;
+use chrono::{self, NaiveTime};
 use chrono::prelude::*;
+use chrono::DateTime;
 use std::collections::VecDeque;
 use ring::{rand, signature};
 use base64;
@@ -17,9 +19,18 @@ pub struct KeyDB {
     keys: VecDeque<SingleKeySet>, // TODO, probably some kind of tree for faster lookup
 }
 
+fn floored_hour_date_time<T: TimeZone>(datetime: &DateTime<T>) -> DateTime<T> {
+    datetime
+        .date()
+        .and_time(NaiveTime::from_hms(
+            datetime.hour(), 0, 0)).unwrap()
+}
+
 impl SingleKeySet {
     pub fn new() -> Self {
+        // Lie about what time it is
         let now = Utc::now();
+        let fake_now = floored_hour_date_time(&now);
 
         let rng = rand::SystemRandom::new();
         let pkcs8_bytes = signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
@@ -35,7 +46,7 @@ impl SingleKeySet {
         let pkcs8 = base64::encode(&pkcs8_bytes[..]);
 
         SingleKeySet {
-            time_generated: format!("{}", now),
+            time_generated: fake_now.to_rfc3339(),
             pub_key_base64: pk,
             pkcs8_base64: pkcs8,
         }
@@ -79,8 +90,42 @@ impl KeyDB {
         }
     }
 
-    pub fn get_current(&self) -> Option<&SingleKeySet> {
-        // TODO - rotate keys on access if hourly rollover
-        self.keys.get(0)
+    pub fn get_current(&mut self) -> &SingleKeySet {
+        // There is always one
+        let current_time = self.keys.get(0).unwrap().time_generated.clone();
+
+        if time_to_switch(&current_time) {
+            self.keys.push_front(SingleKeySet::new());
+        }
+
+        self.keys.get(0).unwrap()
     }
+
+    pub fn get_public_key_by_time(&self, needle: &str) -> Result<(String, String)> {
+        let rtime = floored_hour_date_time(
+            &DateTime::parse_from_rfc3339(needle)
+                .chain_err(|| "Failed to parse time")?);
+
+        // TODO: Yeah, this really shouldn't be a linear search,
+        // especially since I have to parse every time item
+        let key = self.keys.iter().find(|key| {
+            DateTime::parse_from_rfc3339(&key.time_generated).unwrap() == rtime
+        }).ok_or(Error::from("No matching key!"))?;
+
+        Ok((rtime.to_rfc3339(), key.pub_key_base64.clone()))
+    }
+}
+
+fn time_to_switch(time: &str) -> bool {
+    let now = Utc::now();
+    let generated = match DateTime::parse_from_rfc3339(time) {
+        Ok(time) => time,
+        _ => {
+            println!("bad parse");
+            return true;
+        }
+    };
+
+    !((now.date() == generated.date()) &&
+      (now.hour() == generated.hour()))
 }

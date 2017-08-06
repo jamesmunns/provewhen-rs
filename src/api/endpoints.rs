@@ -20,12 +20,9 @@ pub fn sign(
 ) -> Result<Json<SignResponse>, echain::Error> {
     let now = Utc::now();
 
-    let mut signer = keydb.access(|db| {
-        match db.get_current() {
-            Some(signer) => Ok(signer.clone()),
-            None => Err(echain::Error::from("No key present!")),
-        }
-    })??;
+    let mut signer = keydb.access_mut(|db| {
+        db.get_current().clone()
+    })?;
 
     let sig = signer.sign_base64(&message.message)?;
 
@@ -33,10 +30,25 @@ pub fn sign(
     signer.wipe_private();
 
     Ok(Json(SignResponse {
-        timestamp: format!("{}", now),
+        timestamp: now.to_rfc3339(),
         key_time: signer.time_generated.clone(),
         public_key: signer.pub_key_base64.clone(),
         message: message.message.clone(),
         signature: sig,
+    }))
+}
+
+#[get("/key/time/<time>", format = "application/json")]
+pub fn key_time(
+    time: String,
+    keydb: State<Mvdb<KeyDB>>
+) -> Result<Json<KeyResponse>, echain::Error> {
+    let rslt = keydb.access(|db| {
+        db.get_public_key_by_time(&time)
+    })??;
+
+    Ok(Json(KeyResponse{
+        public_key: rslt.1,
+        key_time: rslt.0,
     }))
 }
