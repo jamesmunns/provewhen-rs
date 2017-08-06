@@ -1,0 +1,23 @@
+[package]
+name = "provewhen"
+version = "0.1.0"
+authors = ["James Munns <james.munns@gmail.com>"]
+
+[dependencies]
+mvdb = "0.2"
+
+ring = "0.11"
+untrusted = "0.5"
+
+base64 = "0.6"
+
+serde = "1.0"
+serde_derive = "1.0"
+
+chrono = "0.4"
+
+rocket = "0.3.0"
+rocket_codegen = "0.3.0"
+rocket_contrib = "0.3.0"
+
+error-chain = "0.10"
