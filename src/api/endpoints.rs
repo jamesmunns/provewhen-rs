@@ -1,12 +1,11 @@
 use chrono::prelude::*;
 use mvdb::Mvdb;
 use rocket::State;
-use rocket_contrib::Json;
+use rocket_contrib::{Json, Value};
 
 use api::types::*;
 use errors as echain;
-use errors::ResultExt;
-use pub_key_storage::{KeyDB, SingleKeySet};
+use pub_key_storage::KeyDB;
 
 #[get("/hello", format = "application/json")]
 pub fn hello() -> Result<Json<String>, echain::Error> {
@@ -20,21 +19,20 @@ pub fn sign(
 ) -> Result<Json<SignResponse>, echain::Error> {
     let now = Utc::now();
 
-    let mut signer = keydb.access_mut(|db| {
-        db.get_current().clone()
+    let (sg, kt, pk) = keydb.access_mut(|db| {
+        let signer = db.get_current();
+        let sg = signer.sign_base64(&message.message);
+        let kt = signer.time_generated.clone();
+        let pk = signer.pub_key_base64.clone();
+        (sg, kt, pk)
     })?;
-
-    let sig = signer.sign_base64(&message.message)?;
-
-    // TODO: Is this good enough?
-    signer.wipe_private();
 
     Ok(Json(SignResponse {
         timestamp: now.to_rfc3339(),
-        key_time: signer.time_generated.clone(),
-        public_key: signer.pub_key_base64.clone(),
+        key_time: kt,
+        public_key: pk,
         message: message.message.clone(),
-        signature: sig,
+        signature: sg?,
     }))
 }
 
@@ -51,4 +49,23 @@ pub fn key_time(
         public_key: rslt.1,
         key_time: rslt.0,
     }))
+}
+
+#[post("/verify", format = "application/json", data = "<message>")]
+pub fn verify(
+    message: Json<VerifyRequest>,
+    keydb: State<Mvdb<KeyDB>>
+) -> Result<Json<Value>, echain::Error> {
+    keydb.access(|db| {
+        db.verify(
+            &message.timestamp,
+            &message.public_key,
+            &message.signature,
+            &message.message,
+        )
+    })??;
+
+    Ok(Json(json!({
+        "result": "ok"
+    })))
 }
