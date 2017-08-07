@@ -1,7 +1,7 @@
 use rocket::request::Request;
-use rocket::response::{Response, Responder};
+use rocket::response::{Responder, Response};
 use std::io::Cursor;
-use rocket::http::{Status, ContentType};
+use rocket::http::{ContentType, Status};
 use mvdb;
 
 error_chain!{
@@ -20,7 +20,10 @@ impl<'r> Responder<'r> for Error {
         #[cfg(debug_assertions)]
         {
             rslt += &format!("Error: {}", self);
-            self.iter().skip(1).map(|ce| rslt += &format!(", caused by: {}", ce)).collect::<Vec<_>>();
+            self.iter()
+                .skip(1)
+                .map(|ce| rslt += &format!(", caused by: {}", ce))
+                .collect::<Vec<_>>();
         }
 
         #[cfg(not(debug_assertions))]
@@ -36,10 +39,12 @@ impl<'r> Responder<'r> for Error {
 
         // Respond. The `Ok` here is a bit of a misnomer. It means we
         // successfully created an error response
-        Ok(Response::build()
-            .status(Status::BadRequest)
-            .header(ContentType::JSON)
-            .sized_body(Cursor::new(resp))
-            .finalize())
+        Ok(
+            Response::build()
+                .status(Status::BadRequest)
+                .header(ContentType::JSON)
+                .sized_body(Cursor::new(resp))
+                .finalize(),
+        )
     }
 }

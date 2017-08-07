@@ -1,7 +1,7 @@
 
 #[derive(Serialize, Deserialize)]
 pub struct SignRequest {
-    pub message: String,    // utf8 data
+    pub message: String, // utf8 data
 }
 
 #[derive(Serialize, Deserialize)]

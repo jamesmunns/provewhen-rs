@@ -15,7 +15,7 @@ pub fn hello() -> Result<Json<String>, echain::Error> {
 #[post("/sign", format = "application/json", data = "<message>")]
 pub fn sign(
     message: Json<SignRequest>,
-    keydb: State<Mvdb<KeyDB>>
+    keydb: State<Mvdb<KeyDB>>,
 ) -> Result<Json<SignResponse>, echain::Error> {
     let now = Utc::now();
 
@@ -39,13 +39,11 @@ pub fn sign(
 #[get("/key/time/<time>", format = "application/json")]
 pub fn key_time(
     time: String,
-    keydb: State<Mvdb<KeyDB>>
+    keydb: State<Mvdb<KeyDB>>,
 ) -> Result<Json<KeyResponse>, echain::Error> {
-    let rslt = keydb.access(|db| {
-        db.get_public_key_by_time(&time)
-    })??;
+    let rslt = keydb.access(|db| db.get_public_key_by_time(&time))??;
 
-    Ok(Json(KeyResponse{
+    Ok(Json(KeyResponse {
         public_key: rslt.1,
         key_time: rslt.0,
     }))
@@ -54,7 +52,7 @@ pub fn key_time(
 #[post("/verify", format = "application/json", data = "<message>")]
 pub fn verify(
     message: Json<VerifyRequest>,
-    keydb: State<Mvdb<KeyDB>>
+    keydb: State<Mvdb<KeyDB>>,
 ) -> Result<Json<Value>, echain::Error> {
     keydb.access(|db| {
         db.verify(
