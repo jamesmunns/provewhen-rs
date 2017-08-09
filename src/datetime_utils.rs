@@ -36,7 +36,7 @@ impl ProveWhenTime {
     }
 }
 
-struct DateTimeRange {
+pub struct DateTimeRange {
     current: ProveWhenTime,
     end: ProveWhenTime,
 }
@@ -61,6 +61,7 @@ impl DateTimeRange {
     }
 }
 
+// TODO: https://medium.com/@jordan_98525/reference-iterators-in-rust-5603a51b5192
 impl Iterator for DateTimeRange {
     type Item = ProveWhenTime;
 

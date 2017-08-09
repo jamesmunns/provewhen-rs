@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use ring::{rand, signature};
 use base64;
 use untrusted;
-use datetime_utils::ProveWhenTime;
+use datetime_utils::{DateTimeRange, ProveWhenTime};
 
 #[derive(Serialize, Deserialize)]
 pub struct SingleKeySet {
@@ -38,7 +38,10 @@ impl SingleKeySet {
     pub fn new() -> Self {
         // Lie about what time it is
         let fake_now = ProveWhenTime::now().floored();
+        Self::from_time(&fake_now)
+    }
 
+    pub fn from_time(time: &ProveWhenTime) -> Self {
         let rng = rand::SystemRandom::new();
         let pkcs8_bytes = signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
 
@@ -49,7 +52,7 @@ impl SingleKeySet {
         let pkcs8 = base64::encode(&pkcs8_bytes[..]);
 
         SingleKeySet {
-            time_generated: fake_now.to_string(),
+            time_generated: time.to_string(),
             pub_key_base64: pk,
             pkcs8_base64: pkcs8,
             rendered_kp: Some(key_pair),
@@ -95,19 +98,17 @@ impl KeyDB {
         }
     }
 
-    pub fn render_keypairs(&mut self) -> Result<()> {
-        self.current_key.keypair_cache()?;
-        Ok(())
+    fn rotate(&mut self, new: SingleKeySet) {
+        // Cloning removes the rendered keypair
+        let old = self.current_key.clone();
+
+        self.current_key = new;
+        let _ = self.old_keys.insert(old.time_generated, old.pub_key_base64);
     }
 
     pub fn get_current(&mut self) -> &SingleKeySet {
-        if time_to_switch(&self.current_key.time_generated) {
-            // Cloning removes the rendered keypair
-            let old = self.current_key.clone();
-
-            self.current_key = SingleKeySet::new();
-
-            let _ = self.old_keys.insert(old.time_generated, old.pub_key_base64);
+        if self.time_to_switch() {
+            self.rotate(SingleKeySet::new());
         }
 
         &self.current_key
@@ -152,15 +153,48 @@ impl KeyDB {
             bail!("No matching key!")
         }
     }
-}
 
-fn time_to_switch(time: &str) -> bool {
-    let cur_key_time = match ProveWhenTime::from_str(time) {
-        Ok(time) => time,
-        _ => {
-            return true;
+    /// Should be called some time between deserialization and use
+    pub fn defrost(&mut self) -> Result<()> {
+        // TODO - fill in any gaps?
+
+        // Fill in between last run and current
+        let mut filler = DateTimeRange::new(
+            &ProveWhenTime::from_str(&self.current_key.time_generated)?,
+            &ProveWhenTime::now(),
+        ).map(|time| {
+            (
+                time.to_string(),
+                SingleKeySet::from_time(&time),
+            )
+        })
+            .collect::<Vec<(String, SingleKeySet)>>();
+
+        // Take the last (most recent) item. If there are no items,
+        // then the serialized current_key should be retained as current
+        let (_, keeper) = match filler.pop() {
+            Some(last) => last,
+            None => {
+                // Nothing in the list, just rerender the serialized current key
+                self.current_key.keypair_cache()?;
+                return Ok(())
+            }
+        };
+
+        // Insert all the old keys
+        for (time, key_pair) in filler {
+            self.old_keys.insert(time, key_pair.pub_key_base64);
         }
-    };
 
-    cur_key_time != ProveWhenTime::now().floored()
+        self.rotate(keeper);
+
+        Ok(())
+    }
+
+    fn time_to_switch(&self) -> bool {
+        match ProveWhenTime::from_str(&self.current_key.time_generated) {
+            Ok(time) => time != ProveWhenTime::now().floored(),
+            _ => false,
+        }
+    }
 }

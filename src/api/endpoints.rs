@@ -1,4 +1,3 @@
-use chrono::prelude::*;
 use mvdb::Mvdb;
 use rocket::State;
 use rocket_contrib::{Json, Value};
@@ -6,6 +5,9 @@ use rocket_contrib::{Json, Value};
 use api::types::*;
 use errors as echain;
 use pub_key_storage::KeyDB;
+use datetime_utils::ProveWhenTime;
+
+static BAR_TEXT: &'static str = "================================================================================";
 
 #[get("/hello", format = "application/json")]
 pub fn hello() -> Result<Json<String>, echain::Error> {
@@ -17,21 +19,29 @@ pub fn sign(
     message: Json<SignRequest>,
     keydb: State<Mvdb<KeyDB>>,
 ) -> Result<Json<SignResponse>, echain::Error> {
-    let now = Utc::now();
+    let now = ProveWhenTime::now();
+    let now_string = now.to_string();
+
+    // Mangle the message a bit
+    let msg_to_sign = format!("{}\nSigned by provewhen.io\nSigning Time: {}\n{}\n\n{}",
+        BAR_TEXT,
+        now_string,
+        BAR_TEXT,
+        message.message);
 
     let (sg, kt, pk) = keydb.access_mut(|db| {
         let signer = db.get_current();
-        let sg = signer.sign_base64(&message.message);
+        let sg = signer.sign_base64(&msg_to_sign);
         let kt = signer.time_generated.clone();
         let pk = signer.pub_key_base64.clone();
         (sg, kt, pk)
     })?;
 
     Ok(Json(SignResponse {
-        timestamp: now.to_rfc3339(),
+        timestamp: now_string,
         key_time: kt,
         public_key: pk,
-        message: message.message.clone(),
+        message: msg_to_sign,
         signature: sg?,
     }))
 }
@@ -67,3 +77,18 @@ pub fn verify(
         "result": "ok"
     })))
 }
+
+
+// use std::io;
+// use std::path::{Path, PathBuf};
+// use rocket::response::NamedFile;
+
+// #[get("/")]
+// pub fn index() -> io::Result<NamedFile> {
+//     NamedFile::open("static/index.html")
+// }
+
+// #[get("/<file..>", rank = 2)]
+// pub fn files(file: PathBuf) -> Option<NamedFile> {
+//     NamedFile::open(Path::new("static/").join(file)).ok()
+// }

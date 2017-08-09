@@ -29,10 +29,12 @@ fn main() {
     let keystore = Mvdb::from_file_or_default_pretty(&kpath).expect("Failed to load key database");
 
     // render keypairs on load
+    println!("Defrosting...");
     keystore
-        .access_mut(|db: &mut KeyDB| db.render_keypairs())
+        .access_mut(|db: &mut KeyDB| db.defrost())
         .unwrap()
         .unwrap();
+    println!("Ready to eat!");
 
     api::setup_rocket(keystore).launch();
 }
