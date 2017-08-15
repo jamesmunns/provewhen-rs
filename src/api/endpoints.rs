@@ -5,9 +5,12 @@ use rocket_contrib::{Json, Value};
 use api::types::*;
 use errors as echain;
 use pub_key_storage::KeyDB;
+use key_types::nonce;
 use datetime_utils::ProveWhenTime;
 
-static BAR_TEXT: &'static str = "================================================================================";
+fn raw_msg_to_signable(timestamp: &ProveWhenTime, message: &str, nonce: &str) -> String {
+    format!("{};{};{}", timestamp.as_str(), message, nonce)
+}
 
 #[get("/hello", format = "application/json")]
 pub fn hello() -> Result<Json<String>, echain::Error> {
@@ -20,14 +23,10 @@ pub fn sign(
     keydb: State<Mvdb<KeyDB>>,
 ) -> Result<Json<SignResponse>, echain::Error> {
     let now = ProveWhenTime::now();
-    let now_string = now.to_string();
+    let msg_nonce = nonce()?;
 
     // Mangle the message a bit
-    let msg_to_sign = format!("{}\nSigned by provewhen.io\nSigning Time: {}\n{}\n\n{}",
-        BAR_TEXT,
-        now_string,
-        BAR_TEXT,
-        message.message);
+    let msg_to_sign = raw_msg_to_signable(&now, &message.message, &msg_nonce);
 
     let (sg, kt, pk) = keydb.access_mut(|db| {
         let signer = db.get_current();
@@ -38,17 +37,18 @@ pub fn sign(
     })?;
 
     Ok(Json(SignResponse {
-        timestamp: now_string,
+        timestamp: now,
         key_time: kt,
         public_key: pk,
-        message: msg_to_sign,
+        message: message.message.clone(),
         signature: sg?,
+        nonce: msg_nonce,
     }))
 }
 
 #[get("/key/time/<time>", format = "application/json")]
 pub fn key_time(
-    time: String,
+    time: ProveWhenTime,
     keydb: State<Mvdb<KeyDB>>,
 ) -> Result<Json<KeyResponse>, echain::Error> {
     let rslt = keydb.access(|db| db.get_public_key_by_time(&time))??;
@@ -59,17 +59,43 @@ pub fn key_time(
     }))
 }
 
+#[get("/key/time/<start>/<end>", format = "application/json")]
+pub fn key_time_range(
+    start: ProveWhenTime,
+    end: ProveWhenTime,
+    keydb: State<Mvdb<KeyDB>>,
+) -> Result<Json<KeyRangeResponse>, echain::Error> {
+    let rslt: echain::Result<Vec<KeyResponse>> = keydb.access(|db| {
+        Ok(
+            db.range(&start, &end)?
+            .iter()
+            .take(50) // limit to 50 responses
+            .map(|kr| {
+                KeyResponse {
+                    public_key: kr.public_key().into(),
+                    key_time: kr.time().clone(),
+                }
+            })
+            .collect(),
+        )
+    })?;
+
+    Ok(Json(KeyRangeResponse { keys: rslt? }))
+}
+
 #[post("/verify", format = "application/json", data = "<message>")]
 pub fn verify(
     message: Json<VerifyRequest>,
     keydb: State<Mvdb<KeyDB>>,
 ) -> Result<Json<Value>, echain::Error> {
+    let reassemble = raw_msg_to_signable(&message.timestamp, &message.message, &message.nonce);
+
     keydb.access(|db| {
         db.verify(
             &message.timestamp,
             &message.public_key,
             &message.signature,
-            &message.message,
+            &reassemble,
         )
     })??;
 

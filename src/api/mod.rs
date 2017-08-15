@@ -7,14 +7,6 @@ pub mod types;
 
 pub fn setup_rocket(keydb: Mvdb<KeyDB>) -> rocket::Rocket {
     rocket::ignite()
-        // .mount(
-        //     "/",
-        //     routes![
-        //         // TODO
-        //         endpoints::index,
-        //         endpoints::files,
-        //     ],
-        // )
         .mount(
             "/api/v1/",
             routes![
@@ -23,6 +15,7 @@ pub fn setup_rocket(keydb: Mvdb<KeyDB>) -> rocket::Rocket {
                 endpoints::sign,
                 endpoints::key_time,
                 endpoints::verify,
+                endpoints::key_time_range,
             ],
         )
         .manage(keydb)
