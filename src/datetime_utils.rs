@@ -1,13 +1,16 @@
+use std::cmp::{Ord, Ordering};
+use std::fmt;
+
+use chrono::DateTime;
+use chrono::Duration;
 use chrono::NaiveTime;
 use chrono::prelude::*;
-use chrono::DateTime;
-use errors::*;
-use chrono::Duration;
-
-use std::cmp::{Ord, Ordering};
-use serde::ser::{Serialize, Serializer};
+use rocket::http::RawStr;
+use rocket::request::FromParam;
 use serde::de::{self, Deserialize, Deserializer, Unexpected, Visitor};
-use std::fmt;
+use serde::ser::{Serialize, Serializer};
+
+use errors::*;
 
 #[derive(Debug, Clone, Eq)]
 pub struct ProveWhenTime {
@@ -52,9 +55,6 @@ impl<'de> Deserialize<'de> for ProveWhenTime {
         deserializer.deserialize_str(TimeVisitor {})
     }
 }
-
-use rocket::request::FromParam;
-use rocket::http::RawStr;
 
 impl<'r> FromParam<'r> for ProveWhenTime {
     type Error = &'r RawStr;

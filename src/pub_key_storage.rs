@@ -1,17 +1,14 @@
-use errors::*;
 use ring::signature;
 use base64;
 use untrusted;
+
 use datetime_utils::{DateTimeRange, ProveWhenTime};
-
+use errors::*;
 use key_types::*;
-
 
 #[derive(Serialize, Deserialize)]
 pub struct KeyDB {
     current_key: SingleKeySet,
-
-    // Key: rfc3339 datetime, Value: Base64 ed25519 public key
     old_keys: Vec<TimedPublicKey>,
 }
 
@@ -109,6 +106,7 @@ impl KeyDB {
             ));
         }
 
+        // NOTE: Order matters in this block
         match self.old_keys
             .binary_search_by_key(rtime.inner(), |ref i| i.time().inner().clone())
         {
@@ -174,12 +172,6 @@ impl KeyDB {
     }
 
     fn time_to_switch(&self) -> bool {
-        println!(
-            "{:?} {:?} {:?}",
-            self.current_key.time_generated,
-            ProveWhenTime::now().floored(),
-            self.current_key.time_generated < ProveWhenTime::now().floored()
-        );
         self.current_key.time_generated < ProveWhenTime::now().floored()
     }
 }

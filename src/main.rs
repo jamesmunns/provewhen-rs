@@ -28,9 +28,7 @@ use std::thread;
 use std::time::Duration;
 
 use mvdb::Mvdb;
-
 use pub_key_storage::KeyDB;
-
 
 fn main() {
     let kpath = Path::new("keystore.json");
@@ -65,6 +63,7 @@ fn rotator(db: Mvdb<KeyDB>) {
             ()
         }).expect("Keystore access failed!");
 
+        // TODO - add jitter
         thread::sleep(Duration::from_secs(180));
     }
 }

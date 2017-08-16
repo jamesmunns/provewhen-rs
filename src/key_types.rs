@@ -1,12 +1,13 @@
-use errors::*;
-use ring::{self, signature};
-use base64;
-use untrusted;
-use datetime_utils::ProveWhenTime;
-use ring::rand::SecureRandom;
-
 use std::cmp::{Ord, Ordering};
 use std::ops::Deref;
+
+use base64;
+use ring::rand::SecureRandom;
+use ring::{self, signature};
+use untrusted;
+
+use datetime_utils::ProveWhenTime;
+use errors::*;
 
 lazy_static! {
     pub static ref RANDOM: ring::rand::SystemRandom = {
