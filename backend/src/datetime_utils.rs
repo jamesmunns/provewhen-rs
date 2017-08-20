@@ -120,7 +120,7 @@ impl ProveWhenTime {
             .date()
             .and_time(NaiveTime::from_hms(
                 self.inner.hour(),
-                (self.inner.minute() / 5) * 5,
+                0,
                 0,
             ))
             .unwrap();
@@ -157,7 +157,7 @@ impl DateTimeRange {
 
     fn increment(&mut self) {
         // NOTE: Should match floored
-        self.current.inner = self.current.inner + Duration::minutes(5);
+        self.current.inner = self.current.inner + Duration::hours(1);
         self.current.rendered = self.current.inner.to_rfc3339();
     }
 }
