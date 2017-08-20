@@ -71,28 +71,25 @@ impl KeyDB {
 
     pub fn verify(
         &self,
-        timestamp: &ProveWhenTime,
-        alleged_pk_base64: &str,
-        alleged_sig_base64: &str,
-        message: &str,
+        message: &SignResponse
     ) -> Result<()> {
         // Does a key exist for that time?
-        let pk_base64 = self.get_public_key_by_time(timestamp)?.public_key().to_string();
+        let pk_base64 = self.get_public_key_by_time(&message.timestamp)?.public_key().to_string();
 
         // Does the alleged key match ours?
-        if pk_base64 != alleged_pk_base64 {
+        if pk_base64 != message.public_key {
             bail!("Key mismatch!");
         }
 
         // Now decode sig and pk
         let pk = base64::decode(&pk_base64).chain_err(|| "failed to decode")?;
-        let alleged_sig = base64::decode(alleged_sig_base64)
+        let alleged_sig = base64::decode(&message.signature)
             .chain_err(|| "failed to decode")?;
 
         signature::verify(
             &signature::ED25519,
             untrusted::Input::from(&pk),
-            untrusted::Input::from(message.as_bytes()),
+            untrusted::Input::from(raw_msg_to_signable(&message.timestamp, &message.message, &message.nonce).as_bytes()),
             untrusted::Input::from(&alleged_sig),
         ).chain_err(|| "Signature mismatch!")
     }
@@ -173,5 +170,77 @@ impl KeyDB {
 
     fn time_to_switch(&self) -> bool {
         self.current_key.time_generated < ProveWhenTime::now().floored()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn sign_verify() {
+        let kdb = KeyDB::new();
+        let now = ProveWhenTime::now();
+
+        let signed = kdb.current_key.sign(now, "This is a test of the KeyDB").unwrap();
+
+        assert!(kdb.verify(&signed).is_ok());
+    }
+
+    #[test]
+    fn sign_verify_bad_time() {
+        let kdb = KeyDB::new();
+        let now = ProveWhenTime::now();
+
+        let mut signed = kdb.current_key.sign(now, "This is a test of the KeyDB").unwrap();
+
+        signed.timestamp = ProveWhenTime::now();
+
+        assert!(kdb.verify(&signed).is_err());
+    }
+
+    #[test]
+    fn sign_verify_bad_message() {
+        let kdb = KeyDB::new();
+        let now = ProveWhenTime::now();
+
+        let mut signed = kdb.current_key.sign(now, "This is a test of the KeyDB").unwrap();
+
+        signed.message = "This message has changed".into();
+
+        assert!(kdb.verify(&signed).is_err());
+    }
+
+    #[test]
+    fn sign_verify_bad_nonce() {
+        let kdb = KeyDB::new();
+        let now = ProveWhenTime::now();
+
+        let mut signed = kdb.current_key.sign(now, "This is a test of the KeyDB").unwrap();
+
+        signed.nonce = nonce().unwrap();
+
+        assert!(kdb.verify(&signed).is_err());
+    }
+
+    #[test]
+    fn sign_verify_old_key() {
+        let mut kdb = KeyDB::new();
+
+        // Fill in some old keys
+        for _ in 0..50 {
+            kdb.rotate(SingleKeySet::new());
+        }
+
+        // Sign a message
+        let now = ProveWhenTime::now();
+        let signed = kdb.current_key.sign(now, "This is a test of the KeyDB").unwrap();
+
+        // Fill in some more old keys
+        for _ in 0..50 {
+            kdb.rotate(SingleKeySet::new());
+        }
+
+        // Check the message
+        assert!(kdb.verify(&signed).is_ok());
     }
 }

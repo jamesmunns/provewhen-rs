@@ -5,7 +5,6 @@ use rocket_contrib::{Json, Value};
 use api::types::*;
 use errors as echain;
 use pub_key_storage::KeyDB;
-use key_types::raw_msg_to_signable;
 use datetime_utils::ProveWhenTime;
 
 #[get("/hello", format = "application/json")]
@@ -60,15 +59,9 @@ pub fn verify(
     message: Json<VerifyRequest>,
     keydb: State<Mvdb<KeyDB>>,
 ) -> Result<Json<Value>, echain::Error> {
-    let reassemble = raw_msg_to_signable(&message.timestamp, &message.message, &message.nonce);
 
     keydb.access(|db| {
-        db.verify(
-            &message.timestamp,
-            &message.public_key,
-            &message.signature,
-            &reassemble,
-        )
+        db.verify(&message)
     })??;
 
     Ok(Json(json!({

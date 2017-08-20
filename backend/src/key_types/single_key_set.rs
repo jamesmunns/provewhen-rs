@@ -44,7 +44,7 @@ impl SingleKeySet {
         &self.rendered_kp
     }
 
-    pub fn sign_base64(&self, msg: &str) -> String {
+    fn sign_base64(&self, msg: &str) -> String {
         base64::encode(&self.keypair().sign(msg.as_bytes()))
     }
 
