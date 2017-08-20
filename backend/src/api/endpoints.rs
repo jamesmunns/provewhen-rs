@@ -5,12 +5,8 @@ use rocket_contrib::{Json, Value};
 use api::types::*;
 use errors as echain;
 use pub_key_storage::KeyDB;
-use key_types::nonce;
+use key_types::raw_msg_to_signable;
 use datetime_utils::ProveWhenTime;
-
-fn raw_msg_to_signable(timestamp: &ProveWhenTime, message: &str, nonce: &str) -> String {
-    format!("{};{};{}", timestamp.as_str(), message, nonce)
-}
 
 #[get("/hello", format = "application/json")]
 pub fn hello() -> Result<Json<String>, echain::Error> {
@@ -22,28 +18,12 @@ pub fn sign(
     message: Json<SignRequest>,
     keydb: State<Mvdb<KeyDB>>,
 ) -> Result<Json<SignResponse>, echain::Error> {
-    let now = ProveWhenTime::now();
-    let msg_nonce = nonce()?;
-
-    // Mangle the message a bit
-    let msg_to_sign = raw_msg_to_signable(&now, &message.message, &msg_nonce);
-
-    let (sg, kt, pk) = keydb.access_mut(|db| {
+    let sgd = keydb.access_mut(|db| {
         let signer = db.get_current();
-        let sg = signer.sign_base64(&msg_to_sign);
-        let kt = signer.time_generated.clone();
-        let pk = signer.pub_key_base64.clone();
-        (sg, kt, pk)
+        signer.sign(ProveWhenTime::now(), &message.message)
     })?;
 
-    Ok(Json(SignResponse {
-        timestamp: now,
-        key_time: kt,
-        public_key: pk,
-        message: message.message.clone(),
-        signature: sg?,
-        nonce: msg_nonce,
-    }))
+    Ok(Json(sgd?))
 }
 
 #[get("/key/time/<time>", format = "application/json")]
@@ -53,10 +33,7 @@ pub fn key_time(
 ) -> Result<Json<KeyResponse>, echain::Error> {
     let rslt = keydb.access(|db| db.get_public_key_by_time(&time))??;
 
-    Ok(Json(KeyResponse {
-        public_key: rslt.1,
-        key_time: rslt.0,
-    }))
+    Ok(Json(rslt))
 }
 
 #[get("/key/time/<start>/<end>", format = "application/json")]
@@ -70,12 +47,7 @@ pub fn key_time_range(
             db.range(&start, &end)?
             .iter()
             .take(50) // limit to 50 responses
-            .map(|kr| {
-                KeyResponse {
-                    public_key: kr.public_key().into(),
-                    key_time: kr.time().clone(),
-                }
-            })
+            .cloned()
             .collect(),
         )
     })?;

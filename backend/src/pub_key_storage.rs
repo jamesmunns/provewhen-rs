@@ -8,7 +8,9 @@ use key_types::*;
 
 #[derive(Serialize, Deserialize)]
 pub struct KeyDB {
+    #[serde(skip)]
     current_key: SingleKeySet,
+
     old_keys: Vec<TimedPublicKey>,
 }
 
@@ -20,19 +22,19 @@ impl Default for KeyDB {
 
 impl KeyDB {
     pub fn new() -> Self {
-        Self {
+        let mut new = Self {
             old_keys: Vec::new(),
             current_key: SingleKeySet::new(),
-        }
+        };
+
+        new.log_current_key();
+
+        new
     }
 
     fn rotate(&mut self, new: SingleKeySet) {
-        // Cloning removes the rendered keypair
-        let old = self.current_key.clone();
-
         self.current_key = new;
-        self.old_keys
-            .push(TimedPublicKey::new(old.time_generated, old.pub_key_base64));
+        self.log_current_key();
     }
 
     pub fn get_current(&mut self) -> &SingleKeySet {
@@ -55,10 +57,12 @@ impl KeyDB {
 
         let lbound = match lbound {
             Ok(n) => n,
+            Err(n) if n > self.old_keys.len() => bail!("Bad Binary Search!"),
             Err(n) => n,
         };
         let rbound = match rbound {
             Ok(n) => n,
+            Err(n) if n > self.old_keys.len() => bail!("Bad Binary Search!"),
             Err(n) => n,
         };
 
@@ -73,7 +77,7 @@ impl KeyDB {
         message: &str,
     ) -> Result<()> {
         // Does a key exist for that time?
-        let (_, pk_base64) = self.get_public_key_by_time(timestamp)?;
+        let pk_base64 = self.get_public_key_by_time(timestamp)?.public_key().to_string();
 
         // Does the alleged key match ours?
         if pk_base64 != alleged_pk_base64 {
@@ -93,45 +97,39 @@ impl KeyDB {
         ).chain_err(|| "Signature mismatch!")
     }
 
-    // TODO - return TimedPublicKey
-    pub fn get_public_key_by_time(&self, rtime: &ProveWhenTime) -> Result<(ProveWhenTime, String)> {
+    pub fn get_public_key_by_time(&self, rtime: &ProveWhenTime) -> Result<TimedPublicKey> {
         if ProveWhenTime::now() < *rtime {
             // Time is in the future
             bail!("Cannot provide future keys");
-        } else if self.current_key.time_generated < *rtime {
-            // Time is in between now and current key
-            return Ok((
-                self.current_key.time_generated.clone(),
-                self.current_key.pub_key_base64.clone(),
-            ));
         }
 
-        // NOTE: Order matters in this block
+        /////////////////////////////////////////////////
+        // NOTE: Order matters in this block!
+        /////////////////////////////////////////////////
         match self.old_keys
             .binary_search_by_key(rtime.inner(), |ref i| i.time().inner().clone())
         {
             // An exact match was found for the key
-            Ok(n) => Ok((
-                self.old_keys[n].time().clone(),
-                self.old_keys[n].public_key().into(),
-            )),
+            Ok(n) => Ok(self.old_keys[n].clone()),
 
             // The search fell off the left end of the list
             Err(0) => bail!("Time is before recorded history"),
 
-            // The search fell off the right end of the list
-            Err(n) if n >= self.old_keys.len() => bail!("What?"),
+            // The search fell WAY off the right end of the list,
+            // probably not possible (unless a bug in binary_search)
+            Err(n) if n > self.old_keys.len() => bail!("What?"),
 
             // The search didn't find an exact match, so we can take the
             // item "to the left", which is the "price is right" match:
-            // closest without going over
-            Err(n) => Ok((
-                self.old_keys[n - 1].time().clone(),
-                self.old_keys[n - 1].public_key().into(),
-            )),
+            // closest without going over, including if n == old_keys.len()
+            Err(n) => Ok(self.old_keys[n - 1].clone()),
         }
 
 
+    }
+
+    fn log_current_key(&mut self) {
+        self.old_keys.push(TimedPublicKey::from_single_keyset(&self.current_key));
     }
 
     /// Should be called some time between deserialization and use
@@ -139,33 +137,35 @@ impl KeyDB {
         // Ensure the key storage is sorted
         self.old_keys.sort();
 
-        // TODO - fill in any gaps?
+        let latest = match self.old_keys.last().cloned() {
+            Some(k) => {
+                // Make sure the current key exists in the old list
+                if *k.public_key() != self.current_key.pub_key_base64 {
+                    self.log_current_key();
+                }
 
-        // Fill in between last run and current
-        let mut filler = DateTimeRange::new(
-            &self.current_key.time_generated,
-            &ProveWhenTime::now().floored(),
-        ).map(|time| (time.clone(), SingleKeySet::from_time(time)))
-            .collect::<Vec<(ProveWhenTime, SingleKeySet)>>();
-
-        // Take the last (most recent) item. If there are no items,
-        // then the serialized current_key should be retained as current
-        let (_, keeper) = match filler.pop() {
-            Some(last) => last,
+                k
+            },
             None => {
-                // Nothing in the list, just rerender the serialized current key
-                self.current_key.keypair_cache()?;
-                return Ok(());
-            }
+                // All code after this is processing old keys, nothing
+                // more to do
+                self.log_current_key();
+                return Ok(())
+            },
         };
 
-        // Insert the oldest key first to maintain order
-        self.rotate(keeper);
+
+        // Fill in between last run and current
+        let filler = DateTimeRange::new(
+            latest.time(),
+            &self.current_key.time_generated,
+        ).map(|time| SingleKeySet::from_time(time))
+            .collect::<Vec<SingleKeySet>>();
 
         // Insert all the old keys
-        for (time, key_pair) in filler {
+        for key_pair in filler {
             self.old_keys
-                .push(TimedPublicKey::new(time, key_pair.pub_key_base64));
+                .push(TimedPublicKey::from_single_keyset(&key_pair));
         }
 
         Ok(())

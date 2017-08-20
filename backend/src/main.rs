@@ -1,5 +1,6 @@
 #![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
+#![feature(custom_attribute)]
 
 extern crate ring;
 extern crate untrusted;
@@ -16,6 +17,7 @@ extern crate rocket_contrib;
 extern crate rocket;
 #[macro_use]
 extern crate lazy_static;
+extern crate rand;
 
 mod pub_key_storage;
 mod api;
@@ -32,7 +34,7 @@ use pub_key_storage::KeyDB;
 
 fn main() {
     let kpath = Path::new("keystore.json");
-    let keystore = Mvdb::from_file_pretty(&kpath).expect("Failed to load key database");
+    let keystore = Mvdb::from_file_or_default_pretty(&kpath).expect("Failed to load key database");
 
     // Generate a nonce to force random generator to be initialized
     key_types::nonce().expect("Failed to init random");

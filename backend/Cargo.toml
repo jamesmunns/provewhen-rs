@@ -21,6 +21,8 @@ rocket_contrib = "0.3.0"
 error-chain = "0.10"
 lazy_static = "0.2"
 
+rand = "0.3"
+
 [dependencies.chrono]
 version = "0.4"
 features = ["serde"]
